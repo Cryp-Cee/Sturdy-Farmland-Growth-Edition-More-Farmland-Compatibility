@@ -6,9 +6,13 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.TagKey;
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -16,14 +20,19 @@ import net.minecraft.world.level.block.CropBlock;
 import net.minecraft.world.level.block.FarmBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.network.chat.Component;
+import net.minecraft.ChatFormatting;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
+import net.minecraftforge.event.entity.player.ItemTooltipEvent;
+import net.minecraftforge.event.level.BlockEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.registries.ForgeRegistries;
 
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 @Mod(SturdyFarmlandMoreCompatMod.MOD_ID)
@@ -32,77 +41,121 @@ public class SturdyFarmlandMoreCompatMod {
     public static final String MOD_ID = "sturdy_farmland_more_compat";
 
     public SturdyFarmlandMoreCompatMod() {
-        // leer, alles läuft über den EventBusSubscriber
+        // alles läuft über @EventBusSubscriber
     }
 
-    @Mod.EventBusSubscriber(modid = MOD_ID)
+    @Mod.EventBusSubscriber(modid = MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
     public static class Events {
 
-        // Tag für unsere zusätzlichen Farmlands
+        // Tag für unsere zusätzlichen Farmlands (nur modded Farmlands!)
         public static final TagKey<Block> EXTRA_FARMLAND_TAG =
-                TagKey.create(Registries.BLOCK, new ResourceLocation(MOD_ID, "extra_farmland"));
+                TagKey.create(Registries.BLOCK,
+                        ResourceLocation.fromNamespaceAndPath(MOD_ID, "extra_farmland"));
 
-        // Tags für Sprinkler-Tiers aus Sturdy Farmland - Growth Edition
+        // Sprinkler-Tags aus Sturdy Farmland - Growth Edition
         public static final TagKey<Block> SPRINKLER_TIER_1_TAG =
-                TagKey.create(Registries.BLOCK, new ResourceLocation("dew_drop_farmland_growth", "sprinkler_tier_1"));
+                TagKey.create(Registries.BLOCK,
+                        ResourceLocation.fromNamespaceAndPath("dew_drop_farmland_growth", "sprinkler_tier_1"));
         public static final TagKey<Block> SPRINKLER_TIER_2_TAG =
-                TagKey.create(Registries.BLOCK, new ResourceLocation("dew_drop_farmland_growth", "sprinkler_tier_2"));
+                TagKey.create(Registries.BLOCK,
+                        ResourceLocation.fromNamespaceAndPath("dew_drop_farmland_growth", "sprinkler_tier_2"));
         public static final TagKey<Block> SPRINKLER_TIER_3_TAG =
-                TagKey.create(Registries.BLOCK, new ResourceLocation("dew_drop_farmland_growth", "sprinkler_tier_3"));
+                TagKey.create(Registries.BLOCK,
+                        ResourceLocation.fromNamespaceAndPath("dew_drop_farmland_growth", "sprinkler_tier_3"));
         public static final TagKey<Block> SPRINKLER_TIER_4_TAG =
-                TagKey.create(Registries.BLOCK, new ResourceLocation("dew_drop_farmland_growth", "sprinkler_tier_4"));
+                TagKey.create(Registries.BLOCK,
+                        ResourceLocation.fromNamespaceAndPath("dew_drop_farmland_growth", "sprinkler_tier_4"));
 
-        // Pro Dimension: wurde im aktuellen DayTime-Zyklus (5–15) schon resettet?
+        // pro Dimension: wurde im aktuellen Tages-Zyklus schon resettet?
         private static final Map<ResourceKey<Level>, Boolean> hasResetThisCycle = new HashMap<>();
 
-        // Optional: explizite Farmland -> Bodenblock-Mappings
-        private static final Map<ResourceLocation, Block> farmlandFallbacks = new HashMap<>();
-
-        // Mapping: Fertilizer-Item-ID -> Ziel-Farmland-Block-ID
+        // Mapping: Fertilizer-Item -> Ziel-Farmland-Block (Sturdy Farmland GE)
         private static final Map<ResourceLocation, ResourceLocation> FERTILIZER_TO_SOIL_BLOCK = new HashMap<>();
 
+        // Tooltip-Texte für Fertilizer
+        private static final Map<ResourceLocation, String> FERTILIZER_TOOLTIPS = new HashMap<>();
+
         static {
-            // Hier nehmen wir die offensichtlichen Item-IDs an.
-            // Falls sie anders heißen, funktioniert es einfach nicht – aber es crasht nichts.
+            // Block-Konvertierung
             FERTILIZER_TO_SOIL_BLOCK.put(
-                    new ResourceLocation("dew_drop_farmland_growth", "weak_fertilizer"),
-                    new ResourceLocation("dew_drop_farmland_growth", "weak_fertilized_farmland")
+                    ResourceLocation.fromNamespaceAndPath("dew_drop_farmland_growth", "weak_fertilizer"),
+                    ResourceLocation.fromNamespaceAndPath("dew_drop_farmland_growth", "weak_fertilized_farmland")
             );
             FERTILIZER_TO_SOIL_BLOCK.put(
-                    new ResourceLocation("dew_drop_farmland_growth", "strong_fertilizer"),
-                    new ResourceLocation("dew_drop_farmland_growth", "strong_fertilized_farmland")
+                    ResourceLocation.fromNamespaceAndPath("dew_drop_farmland_growth", "strong_fertilizer"),
+                    ResourceLocation.fromNamespaceAndPath("dew_drop_farmland_growth", "strong_fertilized_farmland")
             );
             FERTILIZER_TO_SOIL_BLOCK.put(
-                    new ResourceLocation("dew_drop_farmland_growth", "hyper_fertilizer"),
-                    new ResourceLocation("dew_drop_farmland_growth", "hyper_fertilized_farmland")
+                    ResourceLocation.fromNamespaceAndPath("dew_drop_farmland_growth", "hyper_fertilizer"),
+                    ResourceLocation.fromNamespaceAndPath("dew_drop_farmland_growth", "hyper_fertilized_farmland")
             );
             FERTILIZER_TO_SOIL_BLOCK.put(
-                    new ResourceLocation("dew_drop_farmland_growth", "hydrating_fertilizer"),
-                    new ResourceLocation("dew_drop_farmland_growth", "hydrating_farmland")
+                    ResourceLocation.fromNamespaceAndPath("dew_drop_farmland_growth", "hydrating_fertilizer"),
+                    ResourceLocation.fromNamespaceAndPath("dew_drop_farmland_growth", "hydrating_farmland")
             );
             FERTILIZER_TO_SOIL_BLOCK.put(
-                    new ResourceLocation("dew_drop_farmland_growth", "deluxe_hydrating_fertilizer"),
-                    new ResourceLocation("dew_drop_farmland_growth", "deluxe_hydrating_farmland")
+                    ResourceLocation.fromNamespaceAndPath("dew_drop_farmland_growth", "deluxe_hydrating_fertilizer"),
+                    ResourceLocation.fromNamespaceAndPath("dew_drop_farmland_growth", "deluxe_hydrating_farmland")
             );
             FERTILIZER_TO_SOIL_BLOCK.put(
-                    new ResourceLocation("dew_drop_farmland_growth", "bountiful_fertilizer"),
-                    new ResourceLocation("dew_drop_farmland_growth", "bountiful_fertilized_farmland")
+                    ResourceLocation.fromNamespaceAndPath("dew_drop_farmland_growth", "bountiful_fertilizer"),
+                    ResourceLocation.fromNamespaceAndPath("dew_drop_farmland_growth", "bountiful_fertilized_farmland")
             );
             FERTILIZER_TO_SOIL_BLOCK.put(
-                    new ResourceLocation("dew_drop_farmland_growth", "low_quality_fertilizer"),
-                    new ResourceLocation("dew_drop_farmland_growth", "low_quality_fertilized_farmland")
+                    ResourceLocation.fromNamespaceAndPath("dew_drop_farmland_growth", "low_quality_fertilizer"),
+                    ResourceLocation.fromNamespaceAndPath("dew_drop_farmland_growth", "low_quality_fertilized_farmland")
             );
             FERTILIZER_TO_SOIL_BLOCK.put(
-                    new ResourceLocation("dew_drop_farmland_growth", "high_quality_fertilizer"),
-                    new ResourceLocation("dew_drop_farmland_growth", "high_quality_fertilized_farmland")
+                    ResourceLocation.fromNamespaceAndPath("dew_drop_farmland_growth", "high_quality_fertilizer"),
+                    ResourceLocation.fromNamespaceAndPath("dew_drop_farmland_growth", "high_quality_fertilized_farmland")
             );
             FERTILIZER_TO_SOIL_BLOCK.put(
-                    new ResourceLocation("dew_drop_farmland_growth", "pristine_quality_fertilizer"),
-                    new ResourceLocation("dew_drop_farmland_growth", "pristine_quality_fertilized_farmland")
+                    ResourceLocation.fromNamespaceAndPath("dew_drop_farmland_growth", "pristine_quality_fertilizer"),
+                    ResourceLocation.fromNamespaceAndPath("dew_drop_farmland_growth", "pristine_quality_fertilized_farmland")
+            );
+
+            // Tooltips – kurz & auf den Punkt, basierend auf Originalbeschreibung + unseren Erweiterungen
+            FERTILIZER_TOOLTIPS.put(
+                    ResourceLocation.fromNamespaceAndPath("dew_drop_farmland_growth", "weak_fertilizer"),
+                    "Boosts initial crop growth by 1 day."
+            );
+            FERTILIZER_TOOLTIPS.put(
+                    ResourceLocation.fromNamespaceAndPath("dew_drop_farmland_growth", "strong_fertilizer"),
+                    "Boosts initial crop growth by 2 days."
+            );
+            FERTILIZER_TOOLTIPS.put(
+                    ResourceLocation.fromNamespaceAndPath("dew_drop_farmland_growth", "hyper_fertilizer"),
+                    "Boosts initial crop growth by 3 days."
+            );
+            FERTILIZER_TOOLTIPS.put(
+                    ResourceLocation.fromNamespaceAndPath("dew_drop_farmland_growth", "hydrating_fertilizer"),
+                    "Farmland stays wet until crops are half grown."
+            );
+            FERTILIZER_TOOLTIPS.put(
+                    ResourceLocation.fromNamespaceAndPath("dew_drop_farmland_growth", "deluxe_hydrating_fertilizer"),
+                    "Farmland never dries while crops are planted."
+            );
+            FERTILIZER_TOOLTIPS.put(
+                    ResourceLocation.fromNamespaceAndPath("dew_drop_farmland_growth", "bountiful_fertilizer"),
+                    "Harvests 6 crops per plant, no seeds returned."
+            );
+            FERTILIZER_TOOLTIPS.put(
+                    ResourceLocation.fromNamespaceAndPath("dew_drop_farmland_growth", "low_quality_fertilizer"),
+                    "Slightly increases crop and seed yield."
+            );
+            FERTILIZER_TOOLTIPS.put(
+                    ResourceLocation.fromNamespaceAndPath("dew_drop_farmland_growth", "high_quality_fertilizer"),
+                    "Moderately increases crop and seed yield."
+            );
+            FERTILIZER_TOOLTIPS.put(
+                    ResourceLocation.fromNamespaceAndPath("dew_drop_farmland_growth", "pristine_quality_fertilizer"),
+                    "Greatly increases crop and seed yield."
             );
         }
 
-        // --- TICK-LOGIK ---
+        // --------------------------------------------------------------------
+        //  TICK-LOGIK (wie v1.0) – NUR für extra_farmland (modded Farmlands)
+        // --------------------------------------------------------------------
 
         @SubscribeEvent
         public static void onLevelTick(TickEvent.LevelTickEvent event) {
@@ -111,33 +164,29 @@ public class SturdyFarmlandMoreCompatMod {
 
             ResourceKey<Level> dim = level.dimension();
 
-            long gameTime = level.getGameTime();         // echte Ticks seit Welterstellung
-            long dayTime  = level.getDayTime() % 24000L; // 0–23999, von Better Days beeinflusst
+            long gameTime = level.getGameTime();          // echte Ticks
+            long dayTime  = level.getDayTime() % 24000L;  // 0–23999
 
-            // Reset-Fenster an Tagesanbruch (wie Sturdy Farmland: dailyTimeMin=5, innerhalb 10 Ticks)
             boolean inResetWindow = (dayTime >= 5L && dayTime <= 15L);
+            boolean alreadyReset  = hasResetThisCycle.getOrDefault(dim, false);
+            boolean doDailyReset  = inResetWindow && !alreadyReset;
 
-            boolean alreadyReset    = hasResetThisCycle.getOrDefault(dim, false);
-            boolean doDailyResetNow = inResetWindow && !alreadyReset;
-
-            // Wenn wir das Fenster verlassen, Reset-Flag für den nächsten Tag freigeben
             if (!inResetWindow && alreadyReset) {
                 hasResetThisCycle.put(dim, false);
             }
 
-            // Moisture-Stabilisierung ca. 1x pro Sekunde außerhalb des Reset-Fensters
             boolean isStabilizeTick        = (gameTime % 20L == 0L);
             boolean allowMoistureStabilize = !inResetWindow && isStabilizeTick;
 
-            if (!doDailyResetNow && !allowMoistureStabilize) {
+            if (!doDailyReset && !allowMoistureStabilize) {
                 return;
             }
 
-            if (doDailyResetNow) {
+            if (doDailyReset) {
                 hasResetThisCycle.put(dim, true);
             }
 
-            processExtraFarmland(level, doDailyResetNow, allowMoistureStabilize);
+            processExtraFarmland(level, doDailyReset, allowMoistureStabilize);
         }
 
         private static void processExtraFarmland(ServerLevel level,
@@ -147,21 +196,17 @@ public class SturdyFarmlandMoreCompatMod {
             List<? extends Player> players = level.players();
             if (players.isEmpty()) return;
 
-            int radius = 64; // Check-Umkreis um Spieler
-
-            RegistryAccess registryAccess = level.registryAccess();
+            int radius = 64;
+            RegistryAccess ra = level.registryAccess();
 
             for (Player player : players) {
                 BlockPos center = player.blockPosition();
-                BlockPos min = center.offset(-radius, -2, -radius);
-                BlockPos max = center.offset(radius, 2, radius);
+                BlockPos min = center.offset(-radius, -radius, -radius);
+                BlockPos max = center.offset(radius, radius, radius);
 
                 for (BlockPos pos : BlockPos.betweenClosed(min, max)) {
                     BlockState state = level.getBlockState(pos);
-
-                    if (!isExtraFarmland(state, registryAccess)) {
-                        continue;
-                    }
+                    if (!state.is(EXTRA_FARMLAND_TAG)) continue; // nur unsere modded Farmlands
 
                     if (doDailyReset) {
                         handleFarmlandDailyReset(level, pos, state);
@@ -172,29 +217,27 @@ public class SturdyFarmlandMoreCompatMod {
             }
         }
 
-        private static boolean isExtraFarmland(BlockState state, RegistryAccess registryAccess) {
-            return state.is(EXTRA_FARMLAND_TAG);
-        }
-
         /**
-         * Genau 1× pro DayTime-Zyklus im Fenster 5–15:
+         * Daily Reset wie in v1.0:
          *
-         * - Wenn ein Sprinkler in Reichweite ist:
-         *      → Pflanze wächst um 1 Stufe (ohne Regen-Bedingung)
-         *      → Farmland wird voll bewässert (Moisture = MAX)
-         *      → kein Austrocknen, kein Dirt-Fallback
-         *
-         * - Wenn KEIN Sprinkler:
-         *      - Wenn Moisture > 0:
-         *          → bei Regen wächst die Pflanze über dem Feld um 1 Stufe
-         *          → Feld wird trocken (Moisture -> 0)
-         *      - Wenn Moisture == 0 oder keine Property:
-         *          → Feld wird zum Bodenblock (Dirt / passender Boden)
+         * - Sprinkler:
+         *      → Pflanze wächst +1
+         *      → Moisture = MAX
+         * - Kein Sprinkler:
+         *      - Moisture > 0:
+         *          → bei Regen wächst Pflanze +1
+         *          → danach Moisture -> 0
+         *      - Moisture == 0:
+         *          → Farmland wird zu Bodenblock (Fallback)
+         * - Farmland ohne Moisture-Property:
+         *      → immer direkt zu Bodenblock
          */
         private static void handleFarmlandDailyReset(ServerLevel level, BlockPos pos, BlockState state) {
-            boolean sprinklerProtected = isFarmlandProtectedBySprinkler(level, pos);
 
-            if (sprinklerProtected) {
+            boolean sprinkler = isFarmlandProtectedBySprinkler(level, pos);
+            boolean raining   = level.isRainingAt(pos.above());
+
+            if (sprinkler) {
                 // Sprinkler-Fall: Crop wachsen lassen + Farmland bewässern, Feld bleibt bestehen
                 growCropAbove(level, pos);
 
@@ -213,101 +256,23 @@ public class SturdyFarmlandMoreCompatMod {
 
                 if (moisture > 0) {
                     // Bewässert → wenn es regnet, Pflanze wachsen lassen
-                    growCropAboveIfRaining(level, pos);
+                    if (raining) {
+                        growCropAbove(level, pos);
+                    }
 
                     // dann austrocknen, Farmland bleibt bestehen
                     BlockState newState = state.setValue(FarmBlock.MOISTURE, 0);
                     level.setBlockAndUpdate(pos, newState);
                 } else {
                     // Bereits trocken → wird zu Bodenblock
-                    BlockState newState = getFallbackSoilState(level, state);
+                    BlockState newState = getFallbackSoilState(state);
                     level.setBlockAndUpdate(pos, newState);
                 }
             } else {
-                // Kein Moisture-Property → direkt zu Bodenblock
-                BlockState newState = getFallbackSoilState(level, state);
+                // Farmland ohne Moisture-Property → immer zu Bodenblock
+                BlockState newState = getFallbackSoilState(state);
                 level.setBlockAndUpdate(pos, newState);
             }
-        }
-
-        /**
-         * Sprinkler-Reichweitenprüfung:
-         * - Tier 1: 3x3 (Radius 1)
-         * - Tier 2: 5x5 (Radius 2)
-         * - Tier 3: 7x7 (Radius 3)
-         * - Tier 4: 9x9 (Radius 4)
-         * Es wird nach Sprinklern im Bereich von +/-4 Blöcken auf gleicher
-         * oder einer Ebene darüber gesucht.
-         */
-        private static boolean isFarmlandProtectedBySprinkler(ServerLevel level, BlockPos farmlandPos) {
-            int maxRadius = 4;
-
-            for (int dy = 0; dy <= 1; dy++) { // gleiche Ebene und eine darüber
-                for (int dx = -maxRadius; dx <= maxRadius; dx++) {
-                    for (int dz = -maxRadius; dz <= maxRadius; dz++) {
-                        BlockPos checkPos = farmlandPos.offset(dx, dy, dz);
-                        BlockState checkState = level.getBlockState(checkPos);
-
-                        int radius = 0;
-
-                        if (checkState.is(SPRINKLER_TIER_1_TAG)) {
-                            radius = 1;
-                        } else if (checkState.is(SPRINKLER_TIER_2_TAG)) {
-                            radius = 2;
-                        } else if (checkState.is(SPRINKLER_TIER_3_TAG)) {
-                            radius = 3;
-                        } else if (checkState.is(SPRINKLER_TIER_4_TAG)) {
-                            radius = 4;
-                        }
-
-                        if (radius > 0) {
-                            int dxAbs = Math.abs(farmlandPos.getX() - checkPos.getX());
-                            int dzAbs = Math.abs(farmlandPos.getZ() - checkPos.getZ());
-
-                            if (dxAbs <= radius && dzAbs <= radius) {
-                                return true;
-                            }
-                        }
-                    }
-                }
-            }
-
-            return false;
-        }
-
-        /**
-         * Generische Crop-Wachstumsfunktion: +1 Age, wenn möglich.
-         */
-        private static void growCropAbove(ServerLevel level, BlockPos farmlandPos) {
-            BlockPos cropPos = farmlandPos.above();
-            BlockState cropState = level.getBlockState(cropPos);
-
-            if (!(cropState.getBlock() instanceof CropBlock cropBlock)) {
-                return;
-            }
-
-            int age = cropBlock.getAge(cropState);
-            int maxAge = cropBlock.getMaxAge();
-
-            if (age < maxAge) {
-                int newAge = age + 1;
-                BlockState newCropState = cropBlock.getStateForAge(newAge);
-                level.setBlockAndUpdate(cropPos, newCropState);
-            }
-        }
-
-        /**
-         * Lässt die Pflanze über dem Farmland um 1 Wachstumsstufe wachsen,
-         * wenn es an dieser Position regnet und ein CropBlock darüber steht.
-         */
-        private static void growCropAboveIfRaining(ServerLevel level, BlockPos farmlandPos) {
-            BlockPos cropPos = farmlandPos.above();
-
-            if (!level.isRainingAt(cropPos)) {
-                return;
-            }
-
-            growCropAbove(level, farmlandPos);
         }
 
         /**
@@ -320,7 +285,7 @@ public class SturdyFarmlandMoreCompatMod {
 
             int moisture = state.getValue(FarmBlock.MOISTURE);
 
-            // 1) Regen kann trockenes Feld bewässern
+            // 1) Trocken + Regen -> wieder bewässern
             if (moisture == 0) {
                 if (level.isRainingAt(pos.above())) {
                     BlockState newState = state.setValue(FarmBlock.MOISTURE, FarmBlock.MAX_MOISTURE);
@@ -336,74 +301,85 @@ public class SturdyFarmlandMoreCompatMod {
             }
         }
 
-        /**
-         * Farmland → Ursprungsboden
-         * Priorität:
-         * 1) explizite Mod-Mappings
-         * 2) heuristisch aus dem Namen ableiten
-         * 3) Vanilla Dirt
-         */
-        private static BlockState getFallbackSoilState(ServerLevel level, BlockState farmlandState) {
-            ResourceLocation id = farmlandState.getBlock().builtInRegistryHolder().key().location();
+        // --------------------------------------------------------
+        //  Sprinkler-Check wie gehabt
+        // --------------------------------------------------------
+
+        private static boolean isFarmlandProtectedBySprinkler(ServerLevel level, BlockPos farmlandPos) {
+            int maxRadius = 4;
+
+            for (int dy = 0; dy <= 1; dy++) { // gleiche Ebene und eine darüber
+                for (int dx = -maxRadius; dx <= maxRadius; dx++) {
+                    for (int dz = -maxRadius; dz <= maxRadius; dz++) {
+                        BlockPos checkPos = farmlandPos.offset(dx, dy, dz);
+                        BlockState checkState = level.getBlockState(checkPos);
+
+                        if (checkState.is(SPRINKLER_TIER_1_TAG) ||
+                                checkState.is(SPRINKLER_TIER_2_TAG) ||
+                                checkState.is(SPRINKLER_TIER_3_TAG) ||
+                                checkState.is(SPRINKLER_TIER_4_TAG)) {
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        // --------------------------------------------------------
+        //  Wachstumshilfe-Funktionen für modded Farmland
+        // --------------------------------------------------------
+
+        private static void growCropAbove(ServerLevel level, BlockPos farmlandPos) {
+            BlockPos cropPos = farmlandPos.above();
+            BlockState cropState = level.getBlockState(cropPos);
+
+            if (!(cropState.getBlock() instanceof CropBlock cropBlock)) {
+                return;
+            }
+
+            int age = cropBlock.getAge(cropState);
+            int maxAge = cropBlock.getMaxAge();
+
+            if (age < maxAge) {
+                BlockState newState = cropBlock.getStateForAge(age + 1);
+                level.setBlockAndUpdate(cropPos, newState);
+            }
+        }
+
+        private static BlockState getFallbackSoilState(BlockState farmlandState) {
+            Block block = farmlandState.getBlock();
+            ResourceLocation id = ForgeRegistries.BLOCKS.getKey(block);
+            if (id == null) {
+                return Blocks.DIRT.defaultBlockState();
+            }
+
             String namespace = id.getNamespace();
-            String path      = id.getPath();
+            String path = id.getPath();
 
-            ResourceLocation soilId = null;
-
-            // Immersive Weathering
-            if (namespace.equals("immersive_weathering")) {
-                switch (path) {
-                    case "silty_farmland"        -> soilId = new ResourceLocation(namespace, "silt");
-                    case "sandy_farmland"        -> soilId = new ResourceLocation(namespace, "sandy_dirt");
-                    case "earthen_clay_farmland" -> soilId = new ResourceLocation(namespace, "earthen_clay");
-                    case "loamy_farmland"        -> soilId = new ResourceLocation(namespace, "loam");
-                }
-            }
-
-            // Farmer's Delight
-            if (namespace.equals("farmersdelight")) {
-                if (path.equals("rich_soil_farmland")) {
-                    soilId = new ResourceLocation(namespace, "rich_soil");
-                }
-            }
-
-            // Regions Unexplored
-            if (namespace.equals("regions_unexplored")) {
-                switch (path) {
-                    case "peat_farmland" -> soilId = new ResourceLocation(namespace, "peat_dirt");
-                    case "silt_farmland" -> soilId = new ResourceLocation(namespace, "silt_dirt");
-                }
-            }
-
-            // Aquaculture 2: farmland -> Vanilla Dirt
-            if (namespace.equals("aquaculture")) {
-                if (path.equals("farmland")) {
-                    soilId = new ResourceLocation("minecraft", "dirt");
-                }
-            }
-
-            // explizites Mapping anwenden, falls vorhanden
-            if (soilId != null) {
-                Block mapped = ForgeRegistries.BLOCKS.getValue(soilId);
-                if (mapped != null && mapped != Blocks.AIR) {
-                    return mapped.defaultBlockState();
-                }
-            }
-
-            // Heuristik: aus *_farmland einen *_dirt-Block o.ä. ableiten
-            String[] candidates = {
-                    path.replace("_farmland", "_dirt"),
-                    path.replace("farmland", "dirt")
-            };
-
-            for (String candPath : candidates) {
-                if (candPath.equals(path)) continue;
-
-                ResourceLocation candId = new ResourceLocation(namespace, candPath);
-                Block candBlock = ForgeRegistries.BLOCKS.getValue(candId);
-
+            // 1) *_farmland -> *_dirt
+            if (path.endsWith("_farmland")) {
+                String base = path.substring(0, path.length() - "_farmland".length());
+                ResourceLocation candidate = ResourceLocation.fromNamespaceAndPath(namespace, base + "_dirt");
+                Block candBlock = ForgeRegistries.BLOCKS.getValue(candidate);
                 if (candBlock != null && candBlock != Blocks.AIR) {
                     return candBlock.defaultBlockState();
+                }
+            }
+
+            // 2) heuristische Spezialfälle
+            String[] soilKeys = {
+                    "silt", "sandy_dirt", "loam", "rich_soil", "peat_dirt"
+            };
+
+            for (String key : soilKeys) {
+                if (path.contains(key)) {
+                    ResourceLocation candidate = ResourceLocation.fromNamespaceAndPath(namespace, key);
+                    Block candBlock = ForgeRegistries.BLOCKS.getValue(candidate);
+                    if (candBlock != null && candBlock != Blocks.AIR) {
+                        return candBlock.defaultBlockState();
+                    }
                 }
             }
 
@@ -411,19 +387,19 @@ public class SturdyFarmlandMoreCompatMod {
             return Blocks.DIRT.defaultBlockState();
         }
 
-        // --- FERTILIZER-SUPPORT ---
+        // --------------------------------------------------------
+        //  Right-Click: Fertilizer wandelt extra_farmland in
+        //  Sturdy-Farmland-Felder um (Chakyl kontrolliert dann alles)
+        // --------------------------------------------------------
 
         @SubscribeEvent
         public static void onRightClickBlock(PlayerInteractEvent.RightClickBlock event) {
             Level level = event.getLevel();
             if (level.isClientSide()) return;
-
             if (!(level instanceof ServerLevel serverLevel)) return;
 
             BlockPos pos = event.getPos();
             BlockState state = serverLevel.getBlockState(pos);
-
-            // Nur unsere extra Farmlands interessieren uns
             if (!state.is(EXTRA_FARMLAND_TAG)) return;
 
             ItemStack stack = event.getItemStack();
@@ -432,29 +408,253 @@ public class SturdyFarmlandMoreCompatMod {
             Player player = event.getEntity();
             if (player == null) return;
 
-            // Welches Item wird benutzt?
             ResourceLocation itemId = ForgeRegistries.ITEMS.getKey(stack.getItem());
             if (itemId == null) return;
 
-            // Gibt es dafür ein Fertilizer-Mapping?
-            ResourceLocation targetSoilId = FERTILIZER_TO_SOIL_BLOCK.get(itemId);
-            if (targetSoilId == null) return;
+            ResourceLocation targetId = FERTILIZER_TO_SOIL_BLOCK.get(itemId);
+            if (targetId == null) return;
 
-            Block targetBlock = ForgeRegistries.BLOCKS.getValue(targetSoilId);
+            Block targetBlock = ForgeRegistries.BLOCKS.getValue(targetId);
             if (targetBlock == null || targetBlock == Blocks.AIR) return;
 
-            // Block ersetzen
             BlockState newState = targetBlock.defaultBlockState();
             serverLevel.setBlockAndUpdate(pos, newState);
 
-            // Item verbrauchen (außer im Creative)
             if (!player.isCreative()) {
                 stack.shrink(1);
             }
 
-            // Event als handled markieren, damit nichts doppelt passiert
             event.setCancellationResult(InteractionResult.SUCCESS);
             event.setCanceled(true);
+        }
+
+        // --------------------------------------------------------
+        //  Bountiful & Quality-Farmland: Ernte-Boni
+        // --------------------------------------------------------
+
+        private enum FertilizerTier {
+            NONE,
+            BOUNTIFUL,
+            LOW_QUALITY,
+            HIGH_QUALITY,
+            PRISTINE
+        }
+
+        private static FertilizerTier getFertilizerTierFromFarmland(BlockState farmland) {
+            ResourceLocation id = ForgeRegistries.BLOCKS.getKey(farmland.getBlock());
+            if (id == null) return FertilizerTier.NONE;
+
+            String path = id.getPath().toLowerCase(Locale.ROOT);
+
+            if (path.contains("bountiful_fertilized_farmland"))   return FertilizerTier.BOUNTIFUL;
+            if (path.contains("low_quality_fertilized_farmland")) return FertilizerTier.LOW_QUALITY;
+            if (path.contains("high_quality_fertilized_farmland"))return FertilizerTier.HIGH_QUALITY;
+            if (path.contains("pristine_quality_fertilized_farmland")) return FertilizerTier.PRISTINE;
+
+            return FertilizerTier.NONE;
+        }
+
+        @SubscribeEvent
+        public static void onCropBreak(BlockEvent.BreakEvent event) {
+            if (!(event.getLevel() instanceof Level level)) return;
+            if (level.isClientSide()) return;
+
+            BlockPos pos = event.getPos();
+            BlockState cropState = level.getBlockState(pos);
+
+            if (!(cropState.getBlock() instanceof CropBlock cropBlock)) {
+                return;
+            }
+
+            // Nur voll ausgewachsene Pflanzen
+            int age = cropBlock.getAge(cropState);
+            int maxAge = cropBlock.getMaxAge();
+            if (age < maxAge) {
+                return;
+            }
+
+            BlockPos belowPos = pos.below();
+            BlockState farmlandState = level.getBlockState(belowPos);
+            FertilizerTier tier = getFertilizerTierFromFarmland(farmlandState);
+            if (tier == FertilizerTier.NONE) {
+                return;
+            }
+
+            if (!(level instanceof ServerLevel serverLevel)) return;
+            RandomSource random = serverLevel.getRandom();
+
+            Block cropBlockRaw = cropState.getBlock();
+
+            // ---------------- Bountiful: genau 6 Früchte, keine Seeds ----------------
+            if (tier == FertilizerTier.BOUNTIFUL) {
+                event.setCanceled(true);
+                serverLevel.setBlockAndUpdate(pos, Blocks.AIR.defaultBlockState());
+
+                int fruitCount = 6; // fix 6
+
+                if (isVanillaCrop(cropBlockRaw)) {
+                    if (cropBlockRaw == Blocks.WHEAT) {
+                        dropItem(serverLevel, pos, Items.WHEAT, fruitCount);
+                    } else if (cropBlockRaw == Blocks.CARROTS) {
+                        dropItem(serverLevel, pos, Items.CARROT, fruitCount);
+                    } else if (cropBlockRaw == Blocks.POTATOES) {
+                        dropItem(serverLevel, pos, Items.POTATO, fruitCount);
+                    } else if (cropBlockRaw == Blocks.BEETROOTS) {
+                        dropItem(serverLevel, pos, Items.BEETROOT, fruitCount);
+                    } else {
+                        Item fallbackFruit = cropBlockRaw.asItem();
+                        if (fallbackFruit != Items.AIR) {
+                            dropItem(serverLevel, pos, fallbackFruit, fruitCount);
+                        }
+                    }
+                } else {
+                    // Modded Crop: ebenfalls komplett eigener Drop, keine Seeds
+                    Item fruit = cropBlockRaw.asItem();
+                    if (fruit != Items.AIR) {
+                        dropItem(serverLevel, pos, fruit, fruitCount);
+                    }
+                }
+                return;
+            }
+
+            // ---------------- Low / High / Pristine ----------------
+
+            // Vanilla-Crops: Seeds + Früchte komplett selbst definieren
+            if (isVanillaCrop(cropBlockRaw)) {
+                event.setCanceled(true);
+                serverLevel.setBlockAndUpdate(pos, Blocks.AIR.defaultBlockState());
+
+                Item fruitItem;
+                Item seedItem;
+
+                if (cropBlockRaw == Blocks.WHEAT) {
+                    fruitItem = Items.WHEAT;
+                    seedItem  = Items.WHEAT_SEEDS;
+                } else if (cropBlockRaw == Blocks.CARROTS) {
+                    fruitItem = Items.CARROT;
+                    seedItem  = Items.CARROT;
+                } else if (cropBlockRaw == Blocks.POTATOES) {
+                    fruitItem = Items.POTATO;
+                    seedItem  = Items.POTATO;
+                } else if (cropBlockRaw == Blocks.BEETROOTS) {
+                    fruitItem = Items.BEETROOT;
+                    seedItem  = Items.BEETROOT_SEEDS;
+                } else {
+                    fruitItem = cropBlockRaw.asItem();
+                    seedItem  = fruitItem;
+                }
+
+                // Basismengen (stabil)
+                int baseFruit = 1;
+                int baseSeeds = 1;
+
+                int bonusFruitMin;
+                int bonusFruitMax;
+                int bonusSeedMin;
+                int bonusSeedMax;
+
+                switch (tier) {
+                    case LOW_QUALITY:
+                        bonusFruitMin = 1; bonusFruitMax = 1; // +1
+                        bonusSeedMin  = 1; bonusSeedMax  = 1; // +1
+                        break;
+                    case HIGH_QUALITY:
+                        bonusFruitMin = 2; bonusFruitMax = 3; // +2–3
+                        bonusSeedMin  = 2; bonusSeedMax  = 3; // +2–3
+                        break;
+                    case PRISTINE:
+                        bonusFruitMin = 4; bonusFruitMax = 6; // +4–6
+                        bonusSeedMin  = 4; bonusSeedMax  = 6; // +4–6
+                        break;
+                    default:
+                        bonusFruitMin = bonusFruitMax = 0;
+                        bonusSeedMin  = bonusSeedMax  = 0;
+                        break;
+                }
+
+                int bonusFruit = bonusFruitMin + random.nextInt(bonusFruitMax - bonusFruitMin + 1);
+                int bonusSeeds = bonusSeedMin  + random.nextInt(bonusSeedMax  - bonusSeedMin  + 1);
+
+                int totalFruit = baseFruit + bonusFruit;
+                int totalSeeds = baseSeeds + bonusSeeds;
+
+                if (totalFruit > 0) {
+                    dropItem(serverLevel, pos, fruitItem, totalFruit);
+                }
+                if (totalSeeds > 0) {
+                    dropItem(serverLevel, pos, seedItem, totalSeeds);
+                }
+
+                return;
+            }
+
+            // Nicht-Vanilla-Crops:
+            // Normale Drops bleiben, wir addieren nur extra Früchte obendrauf.
+            Item fruit = cropBlockRaw.asItem();
+            if (fruit == Items.AIR) {
+                return;
+            }
+
+            int bonusMin;
+            int bonusMax;
+
+            switch (tier) {
+                case LOW_QUALITY:
+                    bonusMin = 1; // +1 Frucht
+                    bonusMax = 1;
+                    break;
+                case HIGH_QUALITY:
+                    bonusMin = 2; // +2–3 Früchte
+                    bonusMax = 3;
+                    break;
+                case PRISTINE:
+                    bonusMin = 4; // +4–6 Früchte
+                    bonusMax = 6;
+                    break;
+                default:
+                    return;
+            }
+
+            int bonusCount = bonusMin + random.nextInt(bonusMax - bonusMin + 1);
+            if (bonusCount > 0) {
+                dropItem(serverLevel, pos, fruit, bonusCount);
+            }
+        }
+
+        private static boolean isVanillaCrop(Block block) {
+            return block == Blocks.WHEAT ||
+                    block == Blocks.CARROTS ||
+                    block == Blocks.POTATOES ||
+                    block == Blocks.BEETROOTS;
+        }
+
+        private static void dropItem(ServerLevel level, BlockPos pos, Item item, int count) {
+            if (count <= 0) return;
+            ItemStack stack = new ItemStack(item, count);
+            Block.popResource(level, pos, stack);
+        }
+
+        // --------------------------------------------------------
+        //  Tooltips für Fertilizer-Items
+        // --------------------------------------------------------
+
+        @SubscribeEvent
+        public static void onItemTooltip(ItemTooltipEvent event) {
+            ItemStack stack = event.getItemStack();
+            if (stack.isEmpty()) return;
+
+            Item item = stack.getItem();
+            ResourceLocation id = ForgeRegistries.ITEMS.getKey(item);
+            if (id == null) return;
+
+            String text = FERTILIZER_TOOLTIPS.get(id);
+            if (text == null || text.isEmpty()) return;
+
+            List<Component> tooltip = event.getToolTip();
+            TooltipFlag flag = event.getFlags();
+
+            // Eine zusätzliche, graue Zeile ans Ende anhängen
+            tooltip.add(Component.literal(text).withStyle(ChatFormatting.GRAY));
         }
     }
 }
