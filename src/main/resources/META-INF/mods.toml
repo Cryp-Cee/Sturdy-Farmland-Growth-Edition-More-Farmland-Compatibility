@@ -1,0 +1,36 @@
+modLoader="javafml"
+loaderVersion="[47,)"
+license="MIT"
+
+[[mods]]
+modId="sturdy_farmland_more_compat"
+version="1.0.0"
+displayName="Sturdy Farmland - More Farmland Compatibility"
+description='''
+Adds additional farmland and crop blocks to the tags
+#dew_drop_farmland_growth:cancel_random_tick and #dewdrop:waterable
+so Sturdy Farmland - Growth Edition and Dew Drop treat them like proper farmland.
+'''
+authors="DEIN NAME"
+
+[[dependencies.sturdy_farmland_more_compat]]
+    modId="forge"
+    mandatory=true
+    versionRange="[47,)"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.sturdy_farmland_more_compat]]
+    modId="minecraft"
+    mandatory=true
+    versionRange="[1.20.1,1.21)"
+    ordering="NONE"
+    side="BOTH"
+
+# optional, aber sinnvoll
+[[dependencies.sturdy_farmland_more_compat]]
+    modId="dew_drop_farmland_growth"
+    mandatory=false
+    versionRange="[0,)"
+    ordering="AFTER"
+    side="BOTH"
